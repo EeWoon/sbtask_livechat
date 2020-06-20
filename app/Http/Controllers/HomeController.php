@@ -29,12 +29,11 @@ class HomeController extends Controller
      */
     public function index()
     {
-        //select all users except logged in user
-        $users = User::where('id', '!=', Auth::id())->get();
+        //select all users except logged in user and count unread message 
 
-        // count unread message 
-        $users = DB::select("select users.id, users.name, users.email, count(is_read) as unread from users LEFT JOIN messages ON users.id = messages.from and is_read = 0 and messages.to = " . Auth::id() . "
-        where users.id != " . Auth::id() . " group by users.id, users.name, users.email");
+        $users = User::select(['id','name','email'])->where('id', '!=', Auth::id())->withCount(['fromMessage as unread'=>function($q){
+            $q->where('to',Auth::id())->where('is_read',0);
+        }])->get();
 
         return view('home', ['users' => $users]);
     }
@@ -61,7 +60,7 @@ class HomeController extends Controller
         $from = Auth::id();
         $to = $request->receiver_id;
         $message = $request->message;
-echo($message);
+
         $data = new Message();
         $data->from = $from;
         $data->to = $to;
@@ -82,7 +81,30 @@ echo($message);
             $options
         );
 
-        $data = ['from' => $from, 'to' => $to]; // sending from and to user id when pressed enter
-        $pusher->trigger('my-channel', 'my-event', $data);
+        $data = ['from' => $from, 'to' => $to,'event'=>'new-message']; // sending from and to user id when pressed enter
+        $pusher->trigger('my-channel-'.$to, 'my-event', $data);
+    }
+
+    public function sendTyping(Request $request)
+    {
+        $from = Auth::id();
+        $to = $request->receiver_id;
+
+        //pusher
+        $options = array(
+            'cluster' => 'ap1',
+            'useTLS' => true
+        );
+
+        $pusher = new Pusher(
+            env('PUSHER_APP_KEY'),
+            env('PUSHER_APP_SECRET'),
+            env('PUSHER_APP_ID'),
+            $options
+        );
+
+        $data = ['from' => $from, 'to' => $to,'event'=>'user-typing']; // sending from and to user id when typing
+        $pusher->trigger('my-channel-'.$to, 'my-event', $data);
+        
     }
 }

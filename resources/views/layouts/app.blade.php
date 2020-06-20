@@ -180,9 +180,31 @@
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
     <script src="https://js.pusher.com/6.0/pusher.min.js"></script>
 
+
     <script>
         var receiver_id = '';
         var my_id = "{{ Auth::id() }}";
+
+        var Typingtimer = {};
+        var hideTyping = {};
+
+        setInterval(function(){ 
+            var now = Date.now();
+
+            for(e in hideTyping)
+            {
+                console.log({e});
+                var difference = (now - hideTyping[e]['time']) / 1000;
+
+                console.log(difference);
+                if(difference>0)
+                {
+                    $(hideTyping[e]['element']).addClass('invisible');
+                    delete hideTyping[e];
+                }
+            }
+        }, 5000);
+
         $(document).ready(function () {
 
             //ajax setup from csrf token
@@ -199,24 +221,52 @@
             cluster: 'ap1'
             });
 
-            var channel = pusher.subscribe('my-channel');
+            var channel = pusher.subscribe('my-channel-<?php echo Auth::id(); ?>');
+
             channel.bind('my-event', function(data) {
-                // alert(JSON.stringify(data));
-                if (my_id == data.from) {
-                    $('#' + data.to).click();
-                } else if (my_id == data.to) {
-                    if (receiver_id == data.from) {
-                        // if receiver is selected, reload the selected user ...
-                        $('#' + data.from).click();
-                    } else {
-                        // if receiver is not seleted, add notification for that user
-                        var pending = parseInt($('#' + data.from).find('.pending').html());
-                        if (pending) {
-                            $('#' + data.from).find('.pending').html(pending + 1);
-                        } else {
-                            $('#' + data.from).append('<span class="pending">1</span>');
+                if(data.event =='new-message')
+                {
+                      // alert(JSON.stringify(data));
+                    if (my_id == data.from) 
+                    {
+                        $('#' + data.to).click();
+                    } 
+                    else if (my_id == data.to) 
+                    {
+                        $('#'+'typingElement_'+data.from).addClass('invisible');
+                        if (receiver_id == data.from) 
+                        {
+                            // if receiver is selected, reload the selected user ...
+                            $('#' + data.from).click();
+                        } 
+                        else 
+                        {
+                            // if receiver is not seleted, add notification for that user
+                            var pending = parseInt($('#' + data.from).find('.pending').html());
+                            if (pending) 
+                            {
+                                $('#' + data.from).find('.pending').html(pending + 1);
+                            } 
+                            else 
+                            {
+                                $('#' + data.from).append('<span class="pending">1</span>');
+                            }
                         }
                     }
+                }
+                else if(data.event =='user-typing')
+                {
+                    if (my_id == data.to) {
+                        console.log('check');
+                        $('#'+'typingElement_'+data.from).removeClass('invisible');
+
+                        var now = new Date();
+                        now.setSeconds(now.getSeconds() + 5);
+
+                        hideTyping[data.from]={'time':now.getTime(),'element':'#'+'typingElement_'+data.from};
+
+                        console.log({hideTyping});
+                    } 
                 }
             });
 
@@ -238,6 +288,45 @@
                 });
             });
 
+            $(document).on('change','.input-text input', function(e) {
+              
+                var datastr = "receiver_id=" + receiver_id;
+
+                //check typing duration
+                if(Typingtimer[receiver_id])
+                {   
+                    var now = Date.now();
+
+                    var difference = (now - Typingtimer[receiver_id]) / 1000;
+
+                        console.log(difference);
+
+                    if(difference < 5)
+                    {
+                        return ;
+                    }
+                    else
+                    {
+                        Typingtimer[receiver_id] = Date.now();
+                    }
+                }
+                else
+                {
+                    Typingtimer[receiver_id] = Date.now();
+                }
+
+                $.ajax({
+                        type: "post",
+                        url: "typing",
+                        data: datastr,
+                        cache: false,
+                        success: function(data) {
+                        },
+                        error: function(jqXHR, status, err) {
+                        },
+                    })
+            });
+
             $(document).on('keyup','.input-text input', function(e) {
                 var message = $(this).val();
                 if(e.keyCode == 13 && message != '' && receiver_id != '') {
@@ -249,7 +338,9 @@
                         url: "message",
                         data: datastr,
                         cache: false,
-                        success: function(data) {},
+                        success: function(data) {
+                            $('#' + receiver_id).click();
+                        },
                         error: function(jqXHR, status, err) {
                             console.log(err)
                         },
